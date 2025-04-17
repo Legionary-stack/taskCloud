@@ -1,1 +1,63 @@
-# taskCloud
+# Cloud Backup Uploader
+
+Этот проект позволяет загружать файлы на Яндекс и Гугл Диск, скачивать файлы и папки,
+просматривать список файлов в облаке.
+Программа использует API Яндекс и Гугл Диска для выполнения операций.
+
+## Установка
+
+1. **Клонируйте репозиторий**
+
+   ```bash
+   git clone https://github.com/Legionary-stack/taskCloud.git
+   cd ваш_репозиторий
+   ```
+
+2. **Установите зависимости**
+    ```bash
+     pip install -r requirements.txt
+    ```
+3. **Создайте файл token.env в корне проекта и добавьте ваш токен доступа**
+    ```env
+   YANDEX_ACCESS_TOKEN=y0__...
+   GOOGLE_ACCESS_TOKEN=ya29...
+    ```
+   Чтобы получить токен:
+    ```text
+    https://yandex.ru/dev/disk/poligon/
+    ```
+   ```text
+   https://developers.google.com/oauthplayground/
+      ```
+   (Используйте Google Drive API v3)
+
+## Примеры Использования
+
+```shell
+python main.py --service google list "Google Планета Земля"
+python main.py --service yandex list "remote/folder/path/"
+
+python main.py --service google upload "local/file/path.txt" "remote/folder/path/"
+python main.py --service yandex upload "local/file/path.txt" "remote/folder/path/"
+
+python main.py --service google upload "local/folder/path" "remote/folder/path/" --type folder
+python main.py --service yandex upload "local/folder/path" "remote/folder/path/" --type folder
+
+python main.py --service google download "remote/file/path.txt" "local/save/path.txt"
+python main.py --service yandex download "remote/file/path.txt" "local/save/path.txt"
+```
+
+- [✅] Добавлен `.gitignore`. Убедитесь, что там есть `.venv` и `.idea`
+- [✅] Создано виртуальное окружение
+- [✅] Есть файл `requirements.txt` или `pyproject.toml`. Исключения: если у вас нет внешних зависимостей.
+- [✅] Настроены линтеры: `mypy` и `flake8`
+- [✅] Настроены форматтеры: `isort` и `black`
+- [✅] Написаны тесты
+- [✅] Написана документация к каждому методу, классу и функции
+- [✅] Написан красивый `README.md` (для форматирования можно использовать markdown), где есть информация о том, как
+  проект установить и запустить, что он делает и умеет, какие фунции там есть
+- [✅] (Для консольных утилит) написан help
+
+**Авторы**
+
+Банников Максим и Попов Георгий КН-203
