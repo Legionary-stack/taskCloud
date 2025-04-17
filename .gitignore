@@ -1,5 +1,6 @@
 .venv
 .idea
+/.idea
 src/test_dir
 token.env
 some_local_test.py
