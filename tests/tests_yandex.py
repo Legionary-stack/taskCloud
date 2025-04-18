@@ -35,8 +35,7 @@ def client() -> Generator[YandexDiskClient, None, None]:
         shutil.rmtree(TEST_LOCAL_FOLDER)
 
         response = requests.delete(
-            f"{client.base_url}/resources?path="
-            f"{TEST_FOLDER}/&permanently=true",
+            f"{client.base_url}/resources?path=" f"{TEST_FOLDER}/&permanently=true",
             headers=client.headers,
         )
     except Exception as e:

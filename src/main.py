@@ -1,9 +1,9 @@
 import argparse
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from client.google_drive_client import GoogleDriveClient
-from client.yandex_client import YandexDiskClient
+from src.client.google_drive_client import GoogleDriveClient
+from src.client.yandex_client import YandexDiskClient
 
 
 def get_client(service: str) -> Union[YandexDiskClient, GoogleDriveClient]:
@@ -16,23 +16,17 @@ def get_client(service: str) -> Union[YandexDiskClient, GoogleDriveClient]:
         raise ValueError("Неподдерживаемый сервис. Доступно: yandex, google")
 
 
-def print_file_list(items: list, service: str) -> None:
+def print_file_list(items: List[Dict[str, Any]], service: str) -> None:
     """Выводит список файлов в удобном формате"""
     if service == "yandex":
         for item in items:
             item_type = "папка" if item.get("type") == "dir" else "файл"
-            print(
-                f"{item_type:<5} {item.get('name')}"
-                f" ({item.get('size', 'N/A')} bytes)"
-            )
+            print(f"{item_type:<5} {item.get('name')}" f" ({item.get('size', 'N/A')} bytes)")
     else:
         mime = "application/vnd.google-apps.folder"
         for item in items:
             item_type = "папка" if item.get("mimeType") == mime else "файл"
-            print(
-                f"{item_type:<5} {item.get('name')}"
-                f" ({item.get('size', 'N/A')} bytes)"
-            )
+            print(f"{item_type:<5} {item.get('name')}" f" ({item.get('size', 'N/A')} bytes)")
 
 
 def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
@@ -47,9 +41,7 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    upload_parser = subparsers.add_parser(
-        "upload", help="Загрузить файл или папку"
-    )
+    upload_parser = subparsers.add_parser("upload", help="Загрузить файл или папку")
     upload_parser.add_argument(
         "source",
         help="Путь к локальному файлу или папке" " (можно в кавычках)",
@@ -64,12 +56,8 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         help="Укажите тип загружаемого объекта",
     )
 
-    download_parser = subparsers.add_parser(
-        "download", help="Скачать файл из облака"
-    )
-    download_parser.add_argument(
-        "source", help="Удаленный путь к файлу в облаке" " (можно в кавычках)"
-    )
+    download_parser = subparsers.add_parser("download", help="Скачать файл из облака")
+    download_parser.add_argument("source", help="Удаленный путь к файлу в облаке" " (можно в кавычках)")
     download_parser.add_argument(
         "destination",
         help="Локальный путь для сохранения файла" " (можно в кавычках)",
@@ -93,10 +81,7 @@ def main() -> None:
         access_response = client.check_disk_access()
 
         if access_response.status_code != 200:
-            print(
-                f"Ошибка доступа к {args.service.capitalize()}:"
-                f" {access_response.status_code}"
-            )
+            print(f"Ошибка доступа к {args.service.capitalize()}:" f" {access_response.status_code}")
             print(access_response.text)
             return
 
@@ -105,15 +90,9 @@ def main() -> None:
             destination = args.destination.strip("\"'")
 
             if not source.exists():
-                raise FileNotFoundError(
-                    f"Локальный путь не существует:" f" {source}"
-                )
+                raise FileNotFoundError(f"Локальный путь не существует:" f" {source}")
 
-            upload_type = (
-                args.type.lower()
-                if args.type
-                else "folder" if source.is_dir() else "file"
-            )
+            upload_type = args.type.lower() if args.type else "folder" if source.is_dir() else "file"
 
             if upload_type == "folder":
                 print(f"Загрузка папки '{source}' в '{destination}'...")
@@ -149,10 +128,7 @@ def main() -> None:
 
             response, items = client.list_files(path)
             if response.status_code != 200:
-                print(
-                    f"Ошибка получения списка файлов:"
-                    f" {response.status_code}"
-                )
+                print(f"Ошибка получения списка файлов:" f" {response.status_code}")
                 print(response.text)
             elif not items:
                 print("Папка пуста")

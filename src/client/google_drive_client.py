@@ -6,17 +6,19 @@ import requests
 from dotenv import load_dotenv
 from requests.models import Response
 
-from client.cloud import CloudClient
+from src.client.cloud import CloudClient
 
 
 class GoogleDriveClient(CloudClient):
+    """Класс для работы с Гугл Диском"""
+
     def __init__(self) -> None:
         self.headers = self._initialize_headers()
         self.base_url = "https://www.googleapis.com/drive/v3"
         self.upload_url = "https://www.googleapis.com/upload/drive/v3/files"
 
     @staticmethod
-    def _initialize_headers() -> dict:
+    def _initialize_headers() -> Dict[str, Any]:
         """Инициализация заголовков с токеном доступа"""
         load_dotenv("token.env")
         google_access_token = os.getenv("GOOGLE_ACCESS_TOKEN")
@@ -31,9 +33,7 @@ class GoogleDriveClient(CloudClient):
 
     def check_disk_access(self) -> Response:
         """Проверка доступности Google Drive"""
-        return requests.get(
-            f"{self.base_url}/about?fields=user", headers=self.headers
-        )
+        return requests.get(f"{self.base_url}/about?fields=user", headers=self.headers)
 
     def _ensure_path_exists(self, remote_path: str) -> str:
         """
@@ -52,9 +52,7 @@ class GoogleDriveClient(CloudClient):
                 f"and trashed=false",
                 "fields": "files(id)",
             }
-            response = requests.get(
-                f"{self.base_url}/files", headers=self.headers, params=query
-            )
+            response = requests.get(f"{self.base_url}/files", headers=self.headers, params=query)
             folders = response.json().get("files", [])
 
             if folders:
@@ -84,13 +82,10 @@ class GoogleDriveClient(CloudClient):
         parent_id = self._ensure_path_exists(parent_path)
 
         query = {
-            "q": f"name='{filename}' and '{parent_id}'"
-            f" in parents and trashed=false",
+            "q": f"name='{filename}' and '{parent_id}'" f" in parents and trashed=false",
             "fields": "files(id)",
         }
-        response = requests.get(
-            f"{self.base_url}/files", headers=self.headers, params=query
-        )
+        response = requests.get(f"{self.base_url}/files", headers=self.headers, params=query)
         return bool(response.json().get("files"))
 
     def upload_file(self, local_path: str, remote_path: str) -> Response:
@@ -116,16 +111,12 @@ class GoogleDriveClient(CloudClient):
 
         return response
 
-    def upload_folder(
-        self, local_folder: str, remote_folder: str
-    ) -> List[Response]:
+    def upload_folder(self, local_folder: str, remote_folder: str) -> List[Response]:
         """Рекурсивная загрузка папки с содержимым"""
         responses = []
 
         if not os.path.isdir(local_folder):
-            raise NotADirectoryError(
-                f"Локальная папка не найдена:" f" {local_folder}"
-            )
+            raise NotADirectoryError(f"Локальная папка не найдена:" f" {local_folder}")
 
         root_folder_id = self._ensure_path_exists(remote_folder)
 
@@ -137,9 +128,7 @@ class GoogleDriveClient(CloudClient):
             for item in os.listdir(current_local):
                 local_path = os.path.join(current_local, item)
                 relative_path = os.path.relpath(local_path, local_folder)
-                remote_path = os.path.join(
-                    remote_folder, relative_path
-                ).replace("\\", "/")
+                remote_path = os.path.join(remote_folder, relative_path).replace("\\", "/")
 
                 if os.path.isdir(local_path):
                     metadata = {
@@ -155,9 +144,7 @@ class GoogleDriveClient(CloudClient):
                     responses.append(response)
 
                     if response.status_code == 200:
-                        folder_stack.append(
-                            (local_path, response.json()["id"])
-                        )
+                        folder_stack.append((local_path, response.json()["id"]))
                 else:
                     response = self.upload_file(local_path, remote_path)
                     responses.append(response)
@@ -175,13 +162,10 @@ class GoogleDriveClient(CloudClient):
             parent_id = self._ensure_path_exists(parent_path)
 
             query = {
-                "q": f"name='{filename}' and '{parent_id}'"
-                f" in parents and trashed=false",
+                "q": f"name='{filename}' and '{parent_id}'" f" in parents and trashed=false",
                 "fields": "files(id)",
             }
-            response = requests.get(
-                f"{self.base_url}/files", headers=self.headers, params=query
-            )
+            response = requests.get(f"{self.base_url}/files", headers=self.headers, params=query)
             files = response.json().get("files", [])
 
             if not files:
@@ -213,9 +197,7 @@ class GoogleDriveClient(CloudClient):
             print(f"Ошибка при скачивании файла: {str(e)}")
             raise
 
-    def list_files(
-        self, remote_path: str = ""
-    ) -> Tuple[Response, Optional[list]]:
+    def list_files(self, remote_path: str = "") -> Tuple[Response, Optional[List[Dict[str, Any]]]]:
         """Получение списка файлов в указанной папке"""
         try:
             parent_id = self._ensure_path_exists(remote_path)
@@ -223,9 +205,7 @@ class GoogleDriveClient(CloudClient):
                 "q": f"'{parent_id}' in parents and trashed=false",
                 "fields": "files(id,name,mimeType,size,modifiedTime)",
             }
-            response = requests.get(
-                f"{self.base_url}/files", headers=self.headers, params=query
-            )
+            response = requests.get(f"{self.base_url}/files", headers=self.headers, params=query)
             return response, response.json().get("files")
         except Exception as e:
             print(f"Ошибка при получении списка файлов: {str(e)}")

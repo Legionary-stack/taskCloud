@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from requests.models import Response
 
 
 class CloudClient(ABC):
+    """Абстрактный класс для работы с облачными Дисками"""
+
     @abstractmethod
-    def _initialize_headers(self) -> dict:
+    def _initialize_headers(self) -> Dict[str, Any]:
         """Инициализация заголовков с токеном доступа"""
         pass
 
@@ -31,9 +33,7 @@ class CloudClient(ABC):
         pass
 
     @abstractmethod
-    def upload_folder(
-        self, local_folder: str, remote_folder: str
-    ) -> List[Response]:
+    def upload_folder(self, local_folder: str, remote_folder: str) -> List[Response]:
         """Загружает папку в облако"""
         pass
 
@@ -43,8 +43,6 @@ class CloudClient(ABC):
         pass
 
     @abstractmethod
-    def list_files(
-        self, remote_path: str = ""
-    ) -> Tuple[Response, Optional[list]]:
+    def list_files(self, remote_path: str = "") -> Tuple[Response, Optional[List[Dict[str, Any]]]]:
         """Список файлов в облаке"""
         pass

@@ -34,19 +34,27 @@
 ## Примеры Использования
 
 ```shell
-python main.py --service google list "Google Планета Земля"
-python main.py --service yandex list "remote/folder/path/"
+python src/main.py --service google list "Google Планета Земля"
+python src/main.py --service yandex list "remote/folder/path/"
 
-python main.py --service google upload "local/file/path.txt" "remote/folder/path/"
-python main.py --service yandex upload "local/file/path.txt" "remote/folder/path/"
+python src/main.py --service google upload "local/file/path.txt" "remote/folder/path/"
+python src/main.py --service yandex upload "local/file/path.txt" "remote/folder/path/"
 
-python main.py --service google upload "local/folder/path" "remote/folder/path/" --type folder
-python main.py --service yandex upload "local/folder/path" "remote/folder/path/" --type folder
+python src/main.py --service google upload "local/folder/path" "remote/folder/path/" --type folder
+python src/main.py --service yandex upload "local/folder/path" "remote/folder/path/" --type folder
 
-python main.py --service google download "remote/file/path.txt" "local/save/path.txt"
-python main.py --service yandex download "remote/file/path.txt" "local/save/path.txt"
+python src/main.py --service google download "remote/file/path.txt" "local/save/path.txt"
+python src/main.py --service yandex download "remote/file/path.txt" "local/save/path.txt"
+```
+Дополнительный запуск + Тесты
+```shell
+python3 -m src.main --service google list
+
+PYTHONPATH=. pytest tests/tests_google.py -v
+PYTHONPATH=. pytest tests/tests_yandex.py -v  
 ```
 
+** **
 - [✅] Добавлен `.gitignore`. Убедитесь, что там есть `.venv` и `.idea`
 - [✅] Создано виртуальное окружение
 - [✅] Есть файл `requirements.txt` или `pyproject.toml`. Исключения: если у вас нет внешних зависимостей.

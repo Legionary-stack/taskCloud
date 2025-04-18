@@ -1,20 +1,22 @@
 import os
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
 from requests.models import Response
 
-from client.cloud import CloudClient
+from src.client.cloud import CloudClient
 
 
 class YandexDiskClient(CloudClient):
+    """Класс для работы с Яндекс Диском"""
+
     def __init__(self) -> None:
         self.headers = self._initialize_headers()
         self.base_url = "https://cloud-api.yandex.net/v1/disk"
 
     @staticmethod
-    def _initialize_headers() -> dict:
+    def _initialize_headers() -> Dict[str, Any]:
         """Инициализация заголовков с токеном доступа"""
         load_dotenv("token.env")
         yandex_access_token = os.getenv("YANDEX_ACCESS_TOKEN")
@@ -48,17 +50,14 @@ class YandexDiskClient(CloudClient):
                 )
                 if response.status_code not in (200, 201):
                     raise Exception(
-                        f"Ошибка при создании папки {current_path}:"
-                        f" {response.status_code} - {response.text}"
+                        f"Ошибка при создании папки {current_path}:" f" {response.status_code} - {response.text}"
                     )
 
         return True
 
     def _path_exists(self, path: str) -> bool:
         """Проверяет, существует ли путь на Яндекс Диске"""
-        response = requests.get(
-            f"{self.base_url}/resources?path={path}", headers=self.headers
-        )
+        response = requests.get(f"{self.base_url}/resources?path={path}", headers=self.headers)
         return response.status_code == 200
 
     def upload_file(self, local_path: str, remote_path: str) -> Response:
@@ -69,8 +68,7 @@ class YandexDiskClient(CloudClient):
         self._ensure_path_exists(os.path.dirname(remote_path))
 
         response = requests.get(
-            f"{self.base_url}/resources/upload?path={remote_path}"
-            f"&overwrite=true",
+            f"{self.base_url}/resources/upload?path={remote_path}" f"&overwrite=true",
             headers=self.headers,
         )
 
@@ -84,16 +82,12 @@ class YandexDiskClient(CloudClient):
 
         return response
 
-    def upload_folder(
-        self, local_folder: str, remote_folder: str
-    ) -> List[Response]:
+    def upload_folder(self, local_folder: str, remote_folder: str) -> List[Response]:
         """Рекурсивная загрузка папки с содержимым"""
         responses = []
 
         if not os.path.isdir(local_folder):
-            raise NotADirectoryError(
-                f"Локальная папка не найдена:" f" {local_folder}"
-            )
+            raise NotADirectoryError(f"Локальная папка не найдена:" f" {local_folder}")
 
         self._ensure_path_exists(remote_folder)
 
@@ -101,9 +95,7 @@ class YandexDiskClient(CloudClient):
             for dir_name in dirs:
                 local_dir_path = os.path.join(root, dir_name)
                 relative_path = os.path.relpath(local_dir_path, local_folder)
-                remote_dir_path = os.path.join(
-                    remote_folder, relative_path
-                ).replace("\\", "/")
+                remote_dir_path = os.path.join(remote_folder, relative_path).replace("\\", "/")
 
                 response = requests.put(
                     f"{self.base_url}/resources?path={remote_dir_path}",
@@ -114,9 +106,7 @@ class YandexDiskClient(CloudClient):
             for file_name in files:
                 local_file_path = os.path.join(root, file_name)
                 relative_path = os.path.relpath(local_file_path, local_folder)
-                remote_file_path = os.path.join(
-                    remote_folder, relative_path
-                ).replace("\\", "/")
+                remote_file_path = os.path.join(remote_folder, relative_path).replace("\\", "/")
 
                 response = self.upload_file(local_file_path, remote_file_path)
                 responses.append(response)
@@ -136,10 +126,7 @@ class YandexDiskClient(CloudClient):
 
             if response.status_code != 200:
                 error_msg = response.json().get("message", "Ошибка")
-                raise Exception(
-                    f"Яндекс.Диск вернул ошибку: {error_msg}"
-                    f" (код {response.status_code})"
-                )
+                raise Exception(f"Яндекс.Диск вернул ошибку: {error_msg}" f" (код {response.status_code})")
 
             download_url = response.json().get("href")
             if not download_url:
@@ -147,10 +134,7 @@ class YandexDiskClient(CloudClient):
 
             file_response = requests.get(download_url, stream=True)
             if file_response.status_code != 200:
-                raise Exception(
-                    f"Ошибка при загрузке файла:"
-                    f" {file_response.status_code}"
-                )
+                raise Exception(f"Ошибка при загрузке файла:" f" {file_response.status_code}")
 
             if not local_path:
                 local_path = os.path.basename(remote_path)
@@ -171,9 +155,7 @@ class YandexDiskClient(CloudClient):
             print(f"Ошибка при скачивании файла: {str(e)}")
             raise
 
-    def list_files(
-        self, remote_path: str = ""
-    ) -> Tuple[Response, Optional[list]]:
+    def list_files(self, remote_path: str = "") -> Tuple[Response, Optional[List[Dict[str, Any]]]]:
         """Получение списка файлов на Диске"""
         response = requests.get(
             f"{self.base_url}/resources?path={remote_path}&limit=1000",

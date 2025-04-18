@@ -34,11 +34,9 @@ def client() -> Generator[GoogleDriveClient, None, None]:
         os.remove(TEST_FILE)
         shutil.rmtree(TEST_LOCAL_FOLDER)
 
-        parent_id = client._ensure_path_exists(TEST_LOCAL_FOLDER)
+        test_folder_id = client._ensure_path_exists(TEST_FOLDER)
+        response = requests.delete(f"{client.base_url}/files/{test_folder_id}", headers=client.headers)
 
-        response = requests.delete(
-            f"{client.base_url}/files/{parent_id}", headers=client.headers
-        )
     except Exception as e:
         print(f"Ошибка при очистке тестового окружения: {str(e)}")
 
