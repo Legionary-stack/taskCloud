@@ -1,6 +1,6 @@
 .venv
-.idea
-/.idea
+.idea/
 src/test_dir
+__pycache__
 token.env
 some_local_test.py
