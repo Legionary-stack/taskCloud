@@ -1,0 +1,7 @@
+.venv
+.idea/
+src/test_dir
+__pycache__
+yandexSettings.env
+googleSettings.env
+some_local_test.py
