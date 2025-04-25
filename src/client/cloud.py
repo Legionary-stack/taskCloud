@@ -1,48 +1,51 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import Any, NamedTuple
 
 from requests.models import Response
+
+
+class ListFilesResult(NamedTuple):
+    """Результат получения списка файлов."""
+
+    response: Response
+    files: list[dict[str, Any]] | None
 
 
 class CloudClient(ABC):
     """Абстрактный класс для работы с облачными Дисками"""
 
     @abstractmethod
-    def _initialize_headers(self) -> Dict[str, Any]:
-        """Инициализация заголовков с токеном доступа"""
-        pass
-
-    @abstractmethod
     def check_disk_access(self) -> Response:
         """Проверяет доступ к облаку"""
         pass
 
-    @abstractmethod
-    def _ensure_path_exists(self, remote_path: str) -> Union[bool, str]:
+    def _ensure_path_exists(self, remote_path: Path | None) -> bool | str:
         """Рекурсивно создает путь к файлу/папке, если его не существует"""
-        pass
+        raise NotImplementedError("Реализация в дочернем классе")
 
-    @abstractmethod
-    def _path_exists(self, path: str) -> bool:
+    def _path_exists(self, path: Path | None) -> bool:
         """Проверяет, существует ли путь на Диске"""
-        pass
+        raise NotImplementedError("Реализация в дочернем классе")
 
     @abstractmethod
-    def upload_file(self, local_path: str, remote_path: str) -> Response:
+    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
         """Загружает файл в облако"""
         pass
 
     @abstractmethod
-    def upload_folder(self, local_folder: str, remote_folder: str) -> List[Response]:
+    def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Загружает папку в облако"""
         pass
 
     @abstractmethod
-    def download_file(self, remote_path: str, local_path: str) -> Response:
+    def download_file(self, remote_path: Path | None, local_path: Path | None) -> Response:
         """Скачивает файл из облака"""
         pass
 
     @abstractmethod
-    def list_files(self, remote_path: str = "") -> Tuple[Response, Optional[List[Dict[str, Any]]]]:
+    def list_files(self, remote_path: Path | None = None) -> ListFilesResult:
         """Список файлов в облаке"""
         pass

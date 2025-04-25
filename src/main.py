@@ -30,7 +30,7 @@ def print_file_list(items: List[Dict[str, Any]], service: str) -> None:
 
 
 def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
-    """парсер аргументов с поддержкой пробелов в путях"""
+    """Парсер аргументов с поддержкой пробелов в путях"""
     parser = argparse.ArgumentParser(description="Cloud Storage CLI Client")
     parser.add_argument(
         "--service",
@@ -44,11 +44,11 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     upload_parser = subparsers.add_parser("upload", help="Загрузить файл или папку")
     upload_parser.add_argument(
         "source",
-        help="Путь к локальному файлу или папке" " (можно в кавычках)",
+        help="Путь к локальному файлу или папке (можно в кавычках)",
     )
     upload_parser.add_argument(
         "destination",
-        help="Удаленный путь в облачном хранилище" " (можно в кавычках)",
+        help="Удаленный путь в облачном хранилище (можно в кавычках)",
     )
     upload_parser.add_argument(
         "--type",
@@ -57,10 +57,13 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     )
 
     download_parser = subparsers.add_parser("download", help="Скачать файл из облака")
-    download_parser.add_argument("source", help="Удаленный путь к файлу в облаке" " (можно в кавычках)")
+    download_parser.add_argument(
+        "source",
+        help="Удаленный путь к файлу в облаке (можно в кавычках)",
+    )
     download_parser.add_argument(
         "destination",
-        help="Локальный путь для сохранения файла" " (можно в кавычках)",
+        help="Локальный путь для сохранения файла (можно в кавычках)",
     )
 
     list_parser = subparsers.add_parser("list", help="Список файлов в облаке")
@@ -68,7 +71,7 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         "path",
         nargs="?",
         default="",
-        help="Путь в облачном хранилище" " (можно в кавычках)",
+        help="Путь в облачном хранилище (можно в кавычках)",
     )
 
     return parser.parse_args(args)
@@ -81,26 +84,26 @@ def main() -> None:
         access_response = client.check_disk_access()
 
         if access_response.status_code != 200:
-            print(f"Ошибка доступа к {args.service.capitalize()}:" f" {access_response.status_code}")
+            print(f"Ошибка доступа к {args.service.capitalize()}: {access_response.status_code}")
             print(access_response.text)
             return
 
         if args.command == "upload":
-            source = Path(args.source.strip("\"'")).absolute()
-            destination = args.destination.strip("\"'")
+            source = Path(args.source).expanduser().resolve()
+            destination = Path(args.destination.strip("\"'"))
 
             if not source.exists():
-                raise FileNotFoundError(f"Локальный путь не существует:" f" {source}")
+                raise FileNotFoundError(f"Локальный путь не существует: {source}")
 
             upload_type = args.type.lower() if args.type else "folder" if source.is_dir() else "file"
 
             if upload_type == "folder":
                 print(f"Загрузка папки '{source}' в '{destination}'...")
-                responses = client.upload_folder(str(source), destination)
+                responses = client.upload_folder(source, destination)
                 print(f"Успешно загружено {len(responses)} элементов")
             else:
                 print(f"Загрузка файла '{source}' в '{destination}'...")
-                response = client.upload_file(str(source), destination)
+                response = client.upload_file(source, destination)
                 if response.status_code in (200, 201):
                     print("Файл успешно загружен!")
                 else:
@@ -108,14 +111,14 @@ def main() -> None:
                     print(response.text)
 
         elif args.command == "download":
-            source = args.source.strip("\"'")
-            destination = Path(args.destination.strip("\"'"))
+            source = Path(args.source.strip("\"'"))
+            destination = Path(args.destination).expanduser().resolve()
 
             print(f"Скачивание '{source}' в '{destination}'...")
 
             destination.parent.mkdir(parents=True, exist_ok=True)
 
-            response = client.download_file(str(source), str(destination))
+            response = client.download_file(source, destination)
             if response.status_code == 200:
                 print("Файл успешно скачан!")
             else:
@@ -123,12 +126,12 @@ def main() -> None:
                 print(response.text)
 
         elif args.command == "list":
-            path = args.path.strip("\"'") if args.path else "/"
+            path = Path(args.path.strip("\"'")) if args.path else Path("/")
             print(f"Содержимое '{path}' на {args.service.capitalize()}:")
 
             response, items = client.list_files(path)
             if response.status_code != 200:
-                print(f"Ошибка получения списка файлов:" f" {response.status_code}")
+                print(f"Ошибка получения списка файлов: {response.status_code}")
                 print(response.text)
             elif not items:
                 print("Папка пуста")

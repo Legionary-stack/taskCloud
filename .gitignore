@@ -2,5 +2,6 @@
 .idea/
 src/test_dir
 __pycache__
-token.env
+yandexSettings.env
+googleSettings.env
 some_local_test.py

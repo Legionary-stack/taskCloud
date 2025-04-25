@@ -17,11 +17,21 @@
     ```bash
      pip install -r requirements.txt
     ```
-3. **Создайте файл token.env в корне проекта и добавьте ваш токен доступа**
+3. **Создайте файлы yandexSettings.env и googleSettings.env в корне проекта и добавьте ваш токен доступа**
     ```env
    YANDEX_ACCESS_TOKEN=y0__...
+   YANDEX_BASE_URL=https://cloud-api.yandex.net/v1/disk
+   YANDEX_RESOURCES_ENDPOINT=/resources
+   YANDEX_UPLOAD_ENDPOINT=/resources/upload
+   YANDEX_DOWNLOAD_ENDPOINT=/resources/download
+   ```
+   ```env
    GOOGLE_ACCESS_TOKEN=ya29...
-    ```
+   GOOGLE_BASE_URL=https://www.googleapis.com/drive/v3
+   GOOGLE_UPLOAD_URL=https://www.googleapis.com/upload/drive/v3/files
+   GOOGLE_RESOURCES_ENDPOINT=/files
+   GOOGLE_MIME_TYPE=application/vnd.google-apps.folder
+   ```
    Чтобы получить токен:
     ```text
     https://yandex.ru/dev/disk/poligon/

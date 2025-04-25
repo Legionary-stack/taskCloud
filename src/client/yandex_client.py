@@ -1,41 +1,46 @@
-import os
-from typing import Any, Dict, List, Optional, Tuple
+from __future__ import annotations
+
+from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from requests.models import Response
 
-from src.client.cloud import CloudClient
+from src.client.cloud import CloudClient, ListFilesResult
+
+
+class YandexSettings(BaseSettings):
+    """Настройки для Яндекс Диска"""
+
+    access_token: str
+    base_url: str
+    resources_endpoint: str
+    upload_endpoint: str
+    download_endpoint: str
+    model_config = SettingsConfigDict(env_file="yandexSettings.env", env_prefix='YANDEX_')
 
 
 class YandexDiskClient(CloudClient):
     """Класс для работы с Яндекс Диском"""
 
     def __init__(self) -> None:
-        self.headers = self._initialize_headers()
-        self.base_url = "https://cloud-api.yandex.net/v1/disk"
-
-    @staticmethod
-    def _initialize_headers() -> Dict[str, Any]:
-        """Инициализация заголовков с токеном доступа"""
-        load_dotenv("token.env")
-        yandex_access_token = os.getenv("YANDEX_ACCESS_TOKEN")
-
-        if not yandex_access_token:
-            raise ValueError("Не найден YANDEX_ACCESS_TOKEN в .env файле")
-
-        return {
-            "Authorization": f"OAuth {yandex_access_token}",
+        self._settings = YandexSettings()  # type: ignore
+        self._base_url = self._settings.base_url
+        self._headers = {
+            "Authorization": f"OAuth {self._settings.access_token}",
             "Accept": "application/json",
         }
 
     def check_disk_access(self) -> Response:
         """Проверка доступности Диска"""
-        return requests.get(self.base_url, headers=self.headers)
+        return requests.get(self._base_url, headers=self._headers)
 
-    def _ensure_path_exists(self, remote_path: str) -> bool:
+    def _ensure_path_exists(self, remote_path: Path | None) -> bool:
         """Рекурсивно создает путь к файлу/папке, если его не существует"""
-        parts = remote_path.split("/")
+        if not remote_path:
+            return True
+
+        parts = remote_path.parts
         current_path = ""
 
         for part in parts:
@@ -43,90 +48,99 @@ class YandexDiskClient(CloudClient):
                 continue
 
             current_path = f"{current_path}/{part}" if current_path else part
-            if not self._path_exists(current_path):
+            if not self._path_exists(Path(current_path)):
+                url = f"{self._base_url}{self._settings.resources_endpoint}?path={current_path}"
                 response = requests.put(
-                    f"{self.base_url}/resources?path={current_path}",
-                    headers=self.headers,
+                    url,
+                    headers=self._headers,
                 )
                 if response.status_code not in (200, 201):
                     raise Exception(
-                        f"Ошибка при создании папки {current_path}:" f" {response.status_code} - {response.text}"
+                        f"Ошибка при создании папки {current_path}: {response.status_code} - {response.text}"
                     )
 
         return True
 
-    def _path_exists(self, path: str) -> bool:
+    def _path_exists(self, path: Path | None) -> bool:
         """Проверяет, существует ли путь на Яндекс Диске"""
-        response = requests.get(f"{self.base_url}/resources?path={path}", headers=self.headers)
+        if not path:
+            return False
+
+        url = f"{self._base_url}{self._settings.resources_endpoint}?path={path}"
+        response = requests.get(url, headers=self._headers)
         return response.status_code == 200
 
-    def upload_file(self, local_path: str, remote_path: str) -> Response:
+    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
         """Загрузка файла на Диск"""
-        if not os.path.exists(local_path):
+        if not local_path:
+            raise ValueError("Локальный путь не может быть None")
+        if not local_path.exists():
             raise FileNotFoundError(f"Локальный файл не найден: {local_path}")
 
-        self._ensure_path_exists(os.path.dirname(remote_path))
+        remote_path_obj = Path(remote_path) if remote_path else Path(local_path.name)
+        parent_path = remote_path_obj.parent if remote_path else None
+        self._ensure_path_exists(parent_path)
 
+        url = f"{self._base_url}{self._settings.upload_endpoint}?path={remote_path_obj}&overwrite=true"
         response = requests.get(
-            f"{self.base_url}/resources/upload?path={remote_path}" f"&overwrite=true",
-            headers=self.headers,
+            url,
+            headers=self._headers,
         )
 
         if response.status_code != 200:
             return response
 
         upload_url = response.json().get("href")
+        if not upload_url:
+            raise Exception("Не удалось получить URL для загрузки")
 
-        with open(local_path, "rb") as f:
+        with local_path.open("rb") as f:
             response = requests.put(upload_url, files={"file": f})
 
         return response
 
-    def upload_folder(self, local_folder: str, remote_folder: str) -> List[Response]:
+    def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Рекурсивная загрузка папки с содержимым"""
+        if not local_folder:
+            raise ValueError("Локальная папка не может быть None")
+        if not local_folder.is_dir():
+            raise NotADirectoryError(f"Локальная папка не найдена: {local_folder}")
+
         responses = []
-
-        if not os.path.isdir(local_folder):
-            raise NotADirectoryError(f"Локальная папка не найдена:" f" {local_folder}")
-
         self._ensure_path_exists(remote_folder)
 
-        for root, dirs, files in os.walk(local_folder):
-            for dir_name in dirs:
-                local_dir_path = os.path.join(root, dir_name)
-                relative_path = os.path.relpath(local_dir_path, local_folder)
-                remote_dir_path = os.path.join(remote_folder, relative_path).replace("\\", "/")
+        for item in local_folder.rglob("*"):
+            relative_path = item.relative_to(local_folder)
+            remote_item_path = Path(remote_folder) / relative_path if remote_folder else relative_path
 
+            if item.is_dir():
+                url = f"{self._base_url}{self._settings.resources_endpoint}?path={remote_item_path}"
                 response = requests.put(
-                    f"{self.base_url}/resources?path={remote_dir_path}",
-                    headers=self.headers,
+                    url,
+                    headers=self._headers,
                 )
                 responses.append(response)
-
-            for file_name in files:
-                local_file_path = os.path.join(root, file_name)
-                relative_path = os.path.relpath(local_file_path, local_folder)
-                remote_file_path = os.path.join(remote_folder, relative_path).replace("\\", "/")
-
-                response = self.upload_file(local_file_path, remote_file_path)
+            else:
+                response = self.upload_file(item, remote_item_path)
                 responses.append(response)
 
         return responses
 
-    def download_file(self, remote_path: str, local_path: str) -> Response:
+    def download_file(self, remote_path: Path | None, local_path: Path | None) -> Response:
         """Скачивание файла с Диска с полной обработкой ошибок"""
         try:
             if not remote_path:
                 raise ValueError("Не указан путь к файлу на Яндекс Диске")
 
+            url = f"{self._base_url}{self._settings.download_endpoint}?path={remote_path}"
             response = requests.get(
-                f"{self.base_url}/resources/download?path={remote_path}",
-                headers=self.headers,
+                url,
+                headers=self._headers,
             )
 
             if response.status_code != 200:
                 error_msg = response.json().get("message", "Ошибка")
-                raise Exception(f"Яндекс.Диск вернул ошибку: {error_msg}" f" (код {response.status_code})")
+                raise Exception(f"Яндекс.Диск вернул ошибку: {error_msg} (код {response.status_code})")
 
             download_url = response.json().get("href")
             if not download_url:
@@ -134,36 +148,39 @@ class YandexDiskClient(CloudClient):
 
             file_response = requests.get(download_url, stream=True)
             if file_response.status_code != 200:
-                raise Exception(f"Ошибка при загрузке файла:" f" {file_response.status_code}")
+                raise Exception(f"Ошибка при загрузке файла: {file_response.status_code}")
 
-            if not local_path:
-                local_path = os.path.basename(remote_path)
+            download_path = Path(local_path) if local_path else Path(remote_path.name)
+            if download_path.parent:
+                download_path.parent.mkdir(parents=True, exist_ok=True)
 
-            local_dir = os.path.dirname(local_path)
-            if local_dir and not os.path.exists(local_dir):
-                os.makedirs(local_dir)
-
-            with open(local_path, "wb") as f:
+            with download_path.open("wb") as f:
                 for chunk in file_response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
 
-            print(f"Файл успешно скачан: {remote_path} -> {local_path}")
+            print(f"Файл успешно скачан: {remote_path} -> {download_path}")
             return file_response
 
         except Exception as e:
             print(f"Ошибка при скачивании файла: {str(e)}")
             raise
 
-    def list_files(self, remote_path: str = "") -> Tuple[Response, Optional[List[Dict[str, Any]]]]:
+    def list_files(self, remote_path: Path | None = None) -> ListFilesResult:
         """Получение списка файлов на Диске"""
-        response = requests.get(
-            f"{self.base_url}/resources?path={remote_path}&limit=1000",
-            headers=self.headers,
-        )
+        try:
+            path_to_list = str(remote_path) if remote_path else ""
+            url = f"{self._base_url}{self._settings.resources_endpoint}?path={path_to_list}&limit=1000"
+            response = requests.get(
+                url,
+                headers=self._headers,
+            )
 
-        if response.status_code != 200:
-            return response, None
+            if response.status_code != 200:
+                return ListFilesResult(response=response, files=None)
 
-        items = response.json().get("_embedded", {}).get("items", [])
-        return response, items
+            items = response.json().get("_embedded", {}).get("items", [])
+            return ListFilesResult(response=response, files=items)
+        except Exception as e:
+            print(f"Ошибка при получении списка файлов: {str(e)}")
+            raise
