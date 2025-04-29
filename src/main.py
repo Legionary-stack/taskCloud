@@ -2,8 +2,8 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from src.client.google_drive_client import GoogleDriveClient
-from src.client.yandex_client import YandexDiskClient
+from client.google_drive_client import GoogleDriveClient
+from client.yandex_client import YandexDiskClient
 
 
 def get_client(service: str) -> Union[YandexDiskClient, GoogleDriveClient]:

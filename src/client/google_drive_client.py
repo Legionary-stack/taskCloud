@@ -7,7 +7,7 @@ import requests
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from requests.models import Response
 
-from src.client.cloud import CloudClient, ListFilesResult
+from .cloud import CloudClient, ListFilesResult
 
 
 class GoogleSettings(BaseSettings):
