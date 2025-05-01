@@ -56,9 +56,7 @@ class GoogleDriveClient(CloudClient):
                 "fields": "files(id)",
             }
             url = f"{self._base_url}{self._settings.resources_endpoint}"
-            response = requests.get(
-                url, headers=self._headers, params=query
-            )
+            response = requests.get(url, headers=self._headers, params=query)
             folders = response.json().get("files", [])
 
             if folders:
@@ -93,29 +91,44 @@ class GoogleDriveClient(CloudClient):
             "fields": "files(id)",
         }
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         return bool(response.json().get("files"))
 
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
-        """Загрузка файла на Google Drive"""
-        if not local_path:
-            raise ValueError("Локальный путь не может быть None")
+    def upload_file(
+            self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
+        """Загрузка файла на Google Drive с корректным версионированием"""
+        if not local_path or not remote_path:
+            raise ValueError("Локальный и удаленный пути не могут быть None")
+
         if not local_path.exists():
             raise FileNotFoundError(f"Локальный файл не найден: {local_path}")
+        print(create_new_version)
 
-        filename = remote_path.name if remote_path else local_path.name
-        parent_path = remote_path.parent if remote_path else None
-        parent_id = self._ensure_path_exists(parent_path)
+        file_id = None
+        if create_new_version:
+            try:
+                file_id = self._get_file_id(remote_path)
+            except FileNotFoundError:
+                pass
 
-        metadata = {"name": filename, "parents": [parent_id]}
+        if file_id:
+            url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}"
 
-        print(metadata)
+            file_metadata = {"name": str(remote_path.name)}
+            requests.patch(url, headers=self._headers, json=file_metadata)
+
+            update_url = f"{self._settings.upload_url}/{file_id}?uploadType=media"
+            with local_path.open("rb") as f:
+                return requests.patch(update_url, headers=self._headers, data=f)
+
+        parent_id = self._ensure_path_exists(remote_path.parent)
+        metadata = {"name": remote_path.name, "parents": [parent_id]}
+
         with local_path.open("rb") as f:
             files: dict[str, tuple[str, Any, str]] = {
                 "metadata": ("metadata", str(metadata), "application/json"),
-                "file": (filename, f, "application/octet-stream"),
+                "file": (remote_path.name, f, "application/octet-stream"),
             }
             url = f"{self._settings.upload_url}?uploadType=multipart"
             response = requests.post(
@@ -123,8 +136,7 @@ class GoogleDriveClient(CloudClient):
                 headers=self._headers,
                 files=files,
             )
-
-        return response
+            return response
 
     def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Рекурсивная загрузка папки с содержимым"""
@@ -180,9 +192,7 @@ class GoogleDriveClient(CloudClient):
         }
 
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         files = response.json().get("files", [])
 
         if not files:
@@ -215,7 +225,46 @@ class GoogleDriveClient(CloudClient):
             "fields": "files(id,name,mimeType,size,modifiedTime)",
         }
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         return ListFilesResult(response=response, files=response.json().get("files", []))
+
+    def list_file_versions(self, file_id: str) -> ListFilesResult:
+        """Получить список версий файла"""
+        url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}/revisions"
+        response = requests.get(url, headers=self._headers)
+        return ListFilesResult(response=response, files=response.json().get("revisions", []))
+
+    def download_version(self, file_id: str, version_id: str, local_path: Path) -> Response:
+        """Скачать конкретную версию файла"""
+        url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}/revisions/{version_id}?alt=media"
+        response = requests.get(url, headers=self._headers, stream=True)
+
+        with local_path.open("wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        return response
+
+    def _get_file_id(self, remote_path: Path) -> str:
+        """Получить ID файла по пути"""
+        if not remote_path:
+            raise ValueError("Не указан путь к файлу")
+
+        filename = remote_path.name
+        parent_path = remote_path.parent
+        parent_id = self._ensure_path_exists(parent_path)
+
+        query = {
+            "q": f"name='{filename}' and '{parent_id}' in parents and trashed=false",
+            "fields": "files(id)",
+        }
+        url = f"{self._base_url}{self._settings.resources_endpoint}"
+        response = requests.get(url, headers=self._headers, params=query)
+        files = response.json().get("files", [])
+
+        if not files:
+            raise FileNotFoundError(f"Файл '{remote_path}' не найден")
+
+        file_id: str = str(files[0]["id"])
+        return file_id

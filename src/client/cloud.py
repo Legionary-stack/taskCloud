@@ -31,7 +31,9 @@ class CloudClient(ABC):
         raise NotImplementedError("Реализация в дочернем классе")
 
     @abstractmethod
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
+    def upload_file(
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
         """Загружает файл в облако"""
         pass
 

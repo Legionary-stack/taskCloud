@@ -55,6 +55,11 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         choices=["file", "folder"],
         help="Укажите тип загружаемого объекта",
     )
+    upload_parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Создать новую версию файла (только Google Drive)",
+    )
 
     download_parser = subparsers.add_parser("download", help="Скачать файл из облака")
     download_parser.add_argument(
@@ -73,6 +78,17 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         default="",
         help="Путь в облачном хранилище (можно в кавычках)",
     )
+
+    versions_parser = subparsers.add_parser("versions", help="Управление версиями файлов")
+    versions_subparsers = versions_parser.add_subparsers(dest="versions_command", required=True)
+
+    list_versions_parser = versions_subparsers.add_parser("list", help="Показать версии файла")
+    list_versions_parser.add_argument("file_path", help="Путь к файлу в облаке")
+
+    download_version_parser = versions_subparsers.add_parser("download", help="Скачать версию файла")
+    download_version_parser.add_argument("file_path", help="Путь к файлу в облаке")
+    download_version_parser.add_argument("version_id", help="ID версии")
+    download_version_parser.add_argument("local_path", help="Локальный путь для сохранения")
 
     return parser.parse_args(args)
 
@@ -103,7 +119,9 @@ def main() -> None:
                 print(f"Успешно загружено {len(responses)} элементов")
             else:
                 print(f"Загрузка файла '{source}' в '{destination}'...")
-                response = client.upload_file(source, destination)
+                response = client.upload_file(
+                    source, destination, create_new_version=args.version if args.service == "google" else False
+                )
                 if response.status_code in (200, 201):
                     print("Файл успешно загружен!")
                 else:
@@ -137,6 +155,26 @@ def main() -> None:
                 print("Папка пуста")
             else:
                 print_file_list(items, args.service)
+
+        elif args.command == "versions":
+            if isinstance(client, YandexDiskClient):
+                print("Версии не поддерживаются в данном клиенте")
+                return
+            elif args.versions_command == "list":
+                file_path = Path(args.file_path.strip("\"'"))
+                file_id = client._get_file_id(file_path)
+                versions = client.list_file_versions(file_id)
+                print(f"Версии файла {file_path}:")
+                for version in versions.files:
+                    print(f"ID: {version['id']}, Дата: {version['modifiedTime']}")
+
+            elif args.versions_command == "download":
+                file_path = Path(args.file_path.strip("\"'"))
+                version_id = args.version_id
+                local_path = Path(args.local_path).expanduser().resolve()
+                file_id = client._get_file_id(file_path)
+                response = client.download_version(file_id, version_id, local_path)
+                print(f"Версия {version_id} скачана в {local_path}")
 
     except Exception as e:
         print(f"Произошла ошибка: {str(e)}")

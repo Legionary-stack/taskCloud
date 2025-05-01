@@ -70,8 +70,12 @@ class YandexDiskClient(CloudClient):
         response = requests.get(url, headers=self._headers)
         return response.status_code == 200
 
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
+    def upload_file(
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
         """Загрузка файла на Диск"""
+        if create_new_version:
+            raise NotImplementedError("Яндекс.Диск не поддерживает версионирование")
         if not local_path:
             raise ValueError("Локальный путь не может быть None")
         if not local_path.exists():
@@ -101,6 +105,7 @@ class YandexDiskClient(CloudClient):
 
     def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Рекурсивная загрузка папки с содержимым"""
+
         if not local_folder:
             raise ValueError("Локальная папка не может быть None")
         if not local_folder.is_dir():
