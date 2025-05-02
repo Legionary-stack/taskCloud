@@ -1,4 +1,5 @@
 import time
+import zipfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Generator
@@ -30,6 +31,16 @@ def test_file() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
+def test_zip_file(test_file: Path) -> Generator[Path, None, None]:
+    zip_path = test_file.with_suffix('.zip')
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        zipf.write(test_file, arcname=test_file.name)
+
+    yield zip_path
+    zip_path.unlink(missing_ok=True)
+
+
+@pytest.fixture
 def test_folder() -> Generator[Path, None, None]:
     with TemporaryDirectory() as temp_dir:
         dir_path = Path(temp_dir)
@@ -55,14 +66,25 @@ def remote_test_folder(client: GoogleDriveClient) -> Generator[str, None, None]:
 
 
 def test_upload_file(client: GoogleDriveClient, test_file: Path, remote_test_folder: str) -> None:
-    remote_path = Path(f"{remote_test_folder}/test_file.txt")
+    remote_path = Path(f"{remote_test_folder}/test_file.zip")
 
     response = client.upload_file(test_file, remote_path)
     assert response.status_code == 200
 
     result = client.list_files(Path(remote_test_folder))
     assert result.files is not None
-    assert any(item["name"] == "test_file.txt" for item in result.files)
+    assert any(item["name"] == "test_file.zip" for item in result.files)
+
+
+def test_upload_zip_file(client: GoogleDriveClient, test_zip_file: Path, remote_test_folder: str) -> None:
+    remote_path = Path(f"{remote_test_folder}/uploaded_zip.zip")
+
+    response = client.upload_file(test_zip_file, remote_path)
+    assert response.status_code == 200
+
+    result = client.list_files(Path(remote_test_folder))
+    assert result.files is not None
+    assert any(item["name"] == "uploaded_zip.zip" for item in result.files)
 
 
 def test_upload_folder(client: GoogleDriveClient, test_folder: Path, remote_test_folder: str) -> None:
@@ -77,23 +99,27 @@ def test_upload_folder(client: GoogleDriveClient, test_folder: Path, remote_test
 
 
 def test_download_file(client: GoogleDriveClient, test_file: Path, remote_test_folder: str) -> None:
-    remote_path = Path(f"{remote_test_folder}/download_test.txt")
+    remote_path = Path(f"{remote_test_folder}/download_test.zip")
     client.upload_file(test_file, remote_path)
     time.sleep(1)
 
-    with NamedTemporaryFile(delete=False) as tmp_file:
-        local_path = Path(tmp_file.name)
+    with NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+        local_zip_path = Path(tmp_file.name)
 
     try:
-        response = client.download_file(remote_path, local_path)
+        response = client.download_file(remote_path, local_zip_path)
         assert response.status_code == 200
-        assert local_path.read_text() == "Test file content"
+
+        with zipfile.ZipFile(local_zip_path, 'r') as zipf:
+            with zipf.open(test_file.name) as extracted_file:
+                content = extracted_file.read().decode('utf-8')
+                assert content == "Test file content"
     finally:
-        local_path.unlink(missing_ok=True)
+        local_zip_path.unlink(missing_ok=True)
 
 
 def test_list_files(client: GoogleDriveClient, test_file: Path, remote_test_folder: str) -> None:
-    test_files = [Path(f"{remote_test_folder}/list_file_{i}.txt") for i in range(2)]
+    test_files = [Path(f"{remote_test_folder}/list_file_{i}.zip") for i in range(2)]
     for file in test_files:
         client.upload_file(test_file, file)
     time.sleep(1)
@@ -101,7 +127,7 @@ def test_list_files(client: GoogleDriveClient, test_file: Path, remote_test_fold
     result = client.list_files(Path(remote_test_folder))
     assert result.files is not None
     assert len(result.files) >= 2
-    assert all(f"list_file_{i}.txt" in [f["name"] for f in result.files] for i in range(2))
+    assert all(f"list_file_{i}.zip" in [f["name"] for f in result.files] for i in range(2))
 
 
 def test_path_operations(client: GoogleDriveClient, remote_test_folder: str) -> None:

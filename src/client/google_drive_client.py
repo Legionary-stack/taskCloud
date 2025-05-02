@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +53,8 @@ class GoogleDriveClient(CloudClient):
         for part in parts:
             query = {
                 "q": f"name='{part}' and '{parent_id}' in parents "
-                     f"and mimeType='{self._mime_type}' "
-                     f"and trashed=false",
+                f"and mimeType='{self._mime_type}' "
+                f"and trashed=false",
                 "fields": "files(id)",
             }
             url = f"{self._base_url}{self._settings.resources_endpoint}"
@@ -94,8 +96,16 @@ class GoogleDriveClient(CloudClient):
         response = requests.get(url, headers=self._headers, params=query)
         return bool(response.json().get("files"))
 
+    def _compress_file(self, file_path: Path) -> io.BytesIO:
+        """Сжимаем файл в ZIP-архив в памяти"""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(file_path, arcname=file_path.name)
+        zip_buffer.seek(0)
+        return zip_buffer
+
     def upload_file(
-            self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
     ) -> Response:
         """Загрузка файла на Google Drive с корректным версионированием"""
         if not local_path or not remote_path:
@@ -103,7 +113,9 @@ class GoogleDriveClient(CloudClient):
 
         if not local_path.exists():
             raise FileNotFoundError(f"Локальный файл не найден: {local_path}")
-        print(create_new_version)
+
+        zip_buffer = self._compress_file(local_path)
+        remote_zip_path = remote_path.with_suffix('.zip')
 
         file_id = None
         if create_new_version:
@@ -114,29 +126,26 @@ class GoogleDriveClient(CloudClient):
 
         if file_id:
             url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}"
-
-            file_metadata = {"name": str(remote_path.name)}
+            file_metadata = {"name": str(remote_zip_path.name)}
             requests.patch(url, headers=self._headers, json=file_metadata)
 
             update_url = f"{self._settings.upload_url}/{file_id}?uploadType=media"
-            with local_path.open("rb") as f:
-                return requests.patch(update_url, headers=self._headers, data=f)
+            return requests.patch(update_url, headers=self._headers, data=zip_buffer)
 
-        parent_id = self._ensure_path_exists(remote_path.parent)
-        metadata = {"name": remote_path.name, "parents": [parent_id]}
+        parent_id = self._ensure_path_exists(remote_zip_path.parent)
+        metadata = {"name": remote_zip_path.name, "parents": [parent_id]}
 
-        with local_path.open("rb") as f:
-            files: dict[str, tuple[str, Any, str]] = {
-                "metadata": ("metadata", str(metadata), "application/json"),
-                "file": (remote_path.name, f, "application/octet-stream"),
-            }
-            url = f"{self._settings.upload_url}?uploadType=multipart"
-            response = requests.post(
-                url,
-                headers=self._headers,
-                files=files,
-            )
-            return response
+        files: dict[str, tuple[str, Any, str]] = {
+            "metadata": ("metadata", str(metadata), "application/json"),
+            "file": (remote_zip_path.name, zip_buffer, "application/zip"),
+        }
+        url = f"{self._settings.upload_url}?uploadType=multipart"
+        response = requests.post(
+            url,
+            headers=self._headers,
+            files=files,
+        )
+        return response
 
     def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Рекурсивная загрузка папки с содержимым"""
