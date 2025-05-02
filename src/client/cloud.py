@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -30,8 +31,14 @@ class CloudClient(ABC):
         """Проверяет, существует ли путь на Диске"""
         raise NotImplementedError("Реализация в дочернем классе")
 
+    def _compress_file(self, file_path: Path) -> io.BytesIO:
+        """Сжимаем файл в ZIP-архив в памяти"""
+        raise NotImplementedError("Реализация в дочернем классе")
+
     @abstractmethod
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
+    def upload_file(
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
         """Загружает файл в облако"""
         pass
 

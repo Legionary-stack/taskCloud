@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 
 import requests
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from requests.models import Response
 
-from src.client.cloud import CloudClient, ListFilesResult
+from .cloud import CloudClient, ListFilesResult
 
 
 class YandexSettings(BaseSettings):
@@ -70,22 +72,30 @@ class YandexDiskClient(CloudClient):
         response = requests.get(url, headers=self._headers)
         return response.status_code == 200
 
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
+    def _compress_file(self, file_path: Path) -> io.BytesIO:
+        """Сжимаем файл в ZIP-архив в памяти"""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(file_path, arcname=file_path.name)
+        zip_buffer.seek(0)
+        return zip_buffer
+
+    def upload_file(
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
         """Загрузка файла на Диск"""
+        if create_new_version:
+            raise NotImplementedError("Яндекс.Диск не поддерживает версионирование")
         if not local_path:
             raise ValueError("Локальный путь не может быть None")
         if not local_path.exists():
             raise FileNotFoundError(f"Локальный файл не найден: {local_path}")
 
-        remote_path_obj = Path(remote_path) if remote_path else Path(local_path.name)
-        parent_path = remote_path_obj.parent if remote_path else None
-        self._ensure_path_exists(parent_path)
+        zip_buffer = self._compress_file(local_path)
+        remote_zip_path = Path(str(remote_path) + '.zip') if remote_path else Path(local_path.name + '.zip')
 
-        url = f"{self._base_url}{self._settings.upload_endpoint}?path={remote_path_obj}&overwrite=true"
-        response = requests.get(
-            url,
-            headers=self._headers,
-        )
+        url = f"{self._base_url}{self._settings.upload_endpoint}?path={remote_zip_path}&overwrite=true"
+        response = requests.get(url, headers=self._headers)
 
         if response.status_code != 200:
             return response
@@ -94,13 +104,14 @@ class YandexDiskClient(CloudClient):
         if not upload_url:
             raise Exception("Не удалось получить URL для загрузки")
 
-        with local_path.open("rb") as f:
-            response = requests.put(upload_url, files={"file": f})
+        file = remote_zip_path.name, zip_buffer, "application/zip"
+        response = requests.put(upload_url, files={"file": file})
 
         return response
 
     def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
         """Рекурсивная загрузка папки с содержимым"""
+
         if not local_folder:
             raise ValueError("Локальная папка не может быть None")
         if not local_folder.is_dir():

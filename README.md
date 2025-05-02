@@ -55,7 +55,15 @@ python src/main.py --service yandex upload "local/folder/path" "remote/folder/pa
 
 python src/main.py --service google download "remote/file/path.txt" "local/save/path.txt"
 python src/main.py --service yandex download "remote/file/path.txt" "local/save/path.txt"
+
+python src/main.py --service google upload file.txt file.txt --version
+python src/main.py --service google versions list file.txt
+python src/main.py --service google versions download "file.txt" "ВЕРСИЯ_ID" "file.txt
+
+пример версии_id: 0B5fr4dMW_UQgSTEwTk9MYlR0aWNDdGFObGVtVkp2c2ZsUStZPQ
+
 ```
+
 Дополнительный запуск + Тесты
 ```shell
 python3 -m src.main --service google list

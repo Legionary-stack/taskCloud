@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +9,7 @@ import requests
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from requests.models import Response
 
-from src.client.cloud import CloudClient, ListFilesResult
+from .cloud import CloudClient, ListFilesResult
 
 
 class GoogleSettings(BaseSettings):
@@ -51,14 +53,12 @@ class GoogleDriveClient(CloudClient):
         for part in parts:
             query = {
                 "q": f"name='{part}' and '{parent_id}' in parents "
-                     f"and mimeType='{self._mime_type}' "
-                     f"and trashed=false",
+                f"and mimeType='{self._mime_type}' "
+                f"and trashed=false",
                 "fields": "files(id)",
             }
             url = f"{self._base_url}{self._settings.resources_endpoint}"
-            response = requests.get(
-                url, headers=self._headers, params=query
-            )
+            response = requests.get(url, headers=self._headers, params=query)
             folders = response.json().get("files", [])
 
             if folders:
@@ -93,37 +93,58 @@ class GoogleDriveClient(CloudClient):
             "fields": "files(id)",
         }
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         return bool(response.json().get("files"))
 
-    def upload_file(self, local_path: Path | None, remote_path: Path | None) -> Response:
-        """Загрузка файла на Google Drive"""
-        if not local_path:
-            raise ValueError("Локальный путь не может быть None")
+    def _compress_file(self, file_path: Path) -> io.BytesIO:
+        """Сжимаем файл в ZIP-архив в памяти"""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(file_path, arcname=file_path.name)
+        zip_buffer.seek(0)
+        return zip_buffer
+
+    def upload_file(
+        self, local_path: Path | None, remote_path: Path | None, create_new_version: bool = False
+    ) -> Response:
+        """Загрузка файла на Google Drive с корректным версионированием"""
+        if not local_path or not remote_path:
+            raise ValueError("Локальный и удаленный пути не могут быть None")
+
         if not local_path.exists():
             raise FileNotFoundError(f"Локальный файл не найден: {local_path}")
 
-        filename = remote_path.name if remote_path else local_path.name
-        parent_path = remote_path.parent if remote_path else None
-        parent_id = self._ensure_path_exists(parent_path)
+        zip_buffer = self._compress_file(local_path)
+        remote_zip_path = remote_path.with_suffix('.zip')
 
-        metadata = {"name": filename, "parents": [parent_id]}
+        file_id = None
+        if create_new_version:
+            try:
+                file_id = self._get_file_id(remote_path)
+            except FileNotFoundError:
+                pass
 
-        print(metadata)
-        with local_path.open("rb") as f:
-            files: dict[str, tuple[str, Any, str]] = {
-                "metadata": ("metadata", str(metadata), "application/json"),
-                "file": (filename, f, "application/octet-stream"),
-            }
-            url = f"{self._settings.upload_url}?uploadType=multipart"
-            response = requests.post(
-                url,
-                headers=self._headers,
-                files=files,
-            )
+        if file_id:
+            url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}"
+            file_metadata = {"name": str(remote_zip_path.name)}
+            requests.patch(url, headers=self._headers, json=file_metadata)
 
+            update_url = f"{self._settings.upload_url}/{file_id}?uploadType=media"
+            return requests.patch(update_url, headers=self._headers, data=zip_buffer)
+
+        parent_id = self._ensure_path_exists(remote_zip_path.parent)
+        metadata = {"name": remote_zip_path.name, "parents": [parent_id]}
+
+        files: dict[str, tuple[str, Any, str]] = {
+            "metadata": ("metadata", str(metadata), "application/json"),
+            "file": (remote_zip_path.name, zip_buffer, "application/zip"),
+        }
+        url = f"{self._settings.upload_url}?uploadType=multipart"
+        response = requests.post(
+            url,
+            headers=self._headers,
+            files=files,
+        )
         return response
 
     def upload_folder(self, local_folder: Path | None, remote_folder: Path | None) -> list[Response]:
@@ -180,9 +201,7 @@ class GoogleDriveClient(CloudClient):
         }
 
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         files = response.json().get("files", [])
 
         if not files:
@@ -215,7 +234,46 @@ class GoogleDriveClient(CloudClient):
             "fields": "files(id,name,mimeType,size,modifiedTime)",
         }
         url = f"{self._base_url}{self._settings.resources_endpoint}"
-        response = requests.get(
-            url, headers=self._headers, params=query
-        )
+        response = requests.get(url, headers=self._headers, params=query)
         return ListFilesResult(response=response, files=response.json().get("files", []))
+
+    def list_file_versions(self, file_id: str) -> ListFilesResult:
+        """Получить список версий файла"""
+        url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}/revisions"
+        response = requests.get(url, headers=self._headers)
+        return ListFilesResult(response=response, files=response.json().get("revisions", []))
+
+    def download_version(self, file_id: str, version_id: str, local_path: Path) -> Response:
+        """Скачать конкретную версию файла"""
+        url = f"{self._base_url}{self._settings.resources_endpoint}/{file_id}/revisions/{version_id}?alt=media"
+        response = requests.get(url, headers=self._headers, stream=True)
+
+        with local_path.open("wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+        return response
+
+    def _get_file_id(self, remote_path: Path) -> str:
+        """Получить ID файла по пути"""
+        if not remote_path:
+            raise ValueError("Не указан путь к файлу")
+
+        filename = remote_path.name
+        parent_path = remote_path.parent
+        parent_id = self._ensure_path_exists(parent_path)
+
+        query = {
+            "q": f"name='{filename}' and '{parent_id}' in parents and trashed=false",
+            "fields": "files(id)",
+        }
+        url = f"{self._base_url}{self._settings.resources_endpoint}"
+        response = requests.get(url, headers=self._headers, params=query)
+        files = response.json().get("files", [])
+
+        if not files:
+            raise FileNotFoundError(f"Файл '{remote_path}' не найден")
+
+        file_id: str = str(files[0]["id"])
+        return file_id

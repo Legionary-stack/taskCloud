@@ -5,3 +5,4 @@ __pycache__
 yandexSettings.env
 googleSettings.env
 some_local_test.py
+.DS_Store
